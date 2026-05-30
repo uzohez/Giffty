@@ -4,9 +4,11 @@ import { useMeeting } from '../context/MeetingContext';
 
 interface ControlBarProps {
   onLeave: () => void;
+  isHost?: boolean;
+  onEndMeeting?: () => void;
 }
 
-export function ControlBar({ onLeave }: ControlBarProps) {
+export function ControlBar({ onLeave, isHost, onEndMeeting }: ControlBarProps) {
   const { state, dispatch } = useMeeting();
   const { localParticipant, isCameraEnabled, isMicrophoneEnabled, isScreenShareEnabled } = useLocalParticipant();
   const room = useRoomContext();
@@ -15,16 +17,9 @@ export function ControlBar({ onLeave }: ControlBarProps) {
   const toggleMic = () => localParticipant.setMicrophoneEnabled(!isMicrophoneEnabled);
   const toggleCamera = () => localParticipant.setCameraEnabled(!isCameraEnabled);
   const toggleScreenShare = () => localParticipant.setScreenShareEnabled(!isScreenShareEnabled);
+  const setLayout = (layout: 'grid' | 'spotlight') => { dispatch({ type: 'SET_LAYOUT', layout }); setShowLayoutMenu(false); };
 
-  const setLayout = (layout: 'grid' | 'spotlight') => {
-    dispatch({ type: 'SET_LAYOUT', layout });
-    setShowLayoutMenu(false);
-  };
-
-  const handleLeave = () => {
-    room.disconnect();
-    onLeave();
-  };
+  const handleLeave = () => { room.disconnect(); onLeave(); };
 
   return (
     <div style={styles.bar}>
@@ -38,17 +33,28 @@ export function ControlBar({ onLeave }: ControlBarProps) {
         <CtrlBtn icon="⊞" label="Layout" onClick={() => setShowLayoutMenu(v => !v)} />
         {showLayoutMenu && (
           <div style={styles.menu}>
-            <button style={styles.menuItem} onClick={() => setLayout('grid')}>Grid view {state.layout === 'grid' ? '✓' : ''}</button>
+            <button style={styles.menuItem} onClick={() => setLayout('grid')}>Grid {state.layout === 'grid' ? '✓' : ''}</button>
             <button style={styles.menuItem} onClick={() => setLayout('spotlight')}>Spotlight {state.layout === 'spotlight' ? '✓' : ''}</button>
           </div>
         )}
       </div>
 
-      <CtrlBtn icon="😊" label="React" onClick={() => {}} />
-
       <div style={styles.divider} />
 
-      <button style={styles.leaveBtn} onClick={handleLeave}>Leave</button>
+      {/* End Meeting for host — visible on all screen sizes */}
+      {isHost && onEndMeeting && (
+        <button style={styles.endBtn} onClick={onEndMeeting}>End Meeting</button>
+      )}
+
+      {/* Leave for participants */}
+      {!isHost && (
+        <button style={styles.leaveBtn} onClick={handleLeave}>Leave</button>
+      )}
+
+      {/* Hosts can also just leave without ending */}
+      {isHost && (
+        <button style={styles.leaveBtn} onClick={handleLeave}>Leave</button>
+      )}
     </div>
   );
 }
@@ -65,14 +71,15 @@ function CtrlBtn({ icon, label, onClick, danger, active }: { icon: string; label
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  bar: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px 16px', background: '#181b22', borderTop: '0.5px solid #2e3340' },
+  bar: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '10px 12px', background: '#181b22', borderTop: '0.5px solid #2e3340', flexWrap: 'wrap' as const },
   ctrl: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 },
   ctrlBtn: { width: 44, height: 44, borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#22262f', border: '0.5px solid #2e3340', color: '#e8eaf0', cursor: 'pointer' },
   ctrlBtnDanger: { background: 'rgba(229,75,75,0.15)', borderColor: '#e54b4b' },
   ctrlBtnActive: { background: 'rgba(79,110,247,0.15)', borderColor: '#4f6ef7' },
-  ctrlLabel: { fontSize: 10, color: '#8b90a0' },
-  divider: { width: 0.5, height: 36, background: '#2e3340', margin: '0 4px' },
-  leaveBtn: { background: '#e54b4b', border: 'none', color: '#fff', padding: '10px 22px', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer' },
-  menu: { position: 'absolute', bottom: '100%', left: '50%', transform: 'translateX(-50%)', background: '#22262f', border: '0.5px solid #2e3340', borderRadius: 8, marginBottom: 8, overflow: 'hidden', zIndex: 10, minWidth: 140 },
+  ctrlLabel: { fontSize: 9, color: '#8b90a0' },
+  divider: { width: 0.5, height: 36, background: '#2e3340', margin: '0 2px' },
+  endBtn: { background: '#e54b4b', border: 'none', color: '#fff', padding: '10px 16px', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer' },
+  leaveBtn: { background: '#22262f', border: '0.5px solid #2e3340', color: '#e8eaf0', padding: '10px 16px', borderRadius: 10, fontSize: 13, fontWeight: 500, cursor: 'pointer' },
+  menu: { position: 'absolute', bottom: '100%', left: '50%', transform: 'translateX(-50%)', background: '#22262f', border: '0.5px solid #2e3340', borderRadius: 8, marginBottom: 8, overflow: 'hidden', zIndex: 10, minWidth: 130 },
   menuItem: { display: 'block', width: '100%', padding: '9px 14px', background: 'none', border: 'none', color: '#e8eaf0', fontSize: 13, cursor: 'pointer', textAlign: 'left' },
 };

@@ -8,8 +8,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 160px;
+  aspect-ratio: 16 / 9;
   cursor: pointer;
+  width: 100%;
 }
 
 .tile::after {

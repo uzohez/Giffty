@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   LiveKitRoom,
   useParticipants,
@@ -26,26 +26,60 @@ interface MeetingRoomProps {
 
 type SidebarTab = 'participants' | 'chat' | null;
 
-function RoomContent({ meetingId, isHost: _isHost, onLeave }: Omit<MeetingRoomProps, 'token'>) {
+// ── Waiting room screen ───────────────────────────────────────────────────────
+function WaitingRoom({ meetingId, onLeave }: { meetingId: string; onLeave: () => void }) {
+  return (
+    <div style={ws.root}>
+      <div style={ws.card}>
+        <div style={ws.icon}>⏳</div>
+        <h2 style={ws.title}>Please wait…</h2>
+        <p style={ws.sub}>The host will let you in shortly.</p>
+        <div style={ws.idBox}>{meetingId}</div>
+        <button style={ws.leave} onClick={onLeave}>Leave</button>
+      </div>
+    </div>
+  );
+}
+
+const ws: Record<string, React.CSSProperties> = {
+  root: { height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0d0f14', fontFamily: "'Segoe UI', system-ui, sans-serif" },
+  card: { background: '#181b22', border: '0.5px solid #2e3340', borderRadius: 16, padding: '48px 40px', textAlign: 'center', maxWidth: 380, width: '90%' },
+  icon: { fontSize: 48, marginBottom: 16 },
+  title: { color: '#e8eaf0', fontSize: 22, fontWeight: 600, margin: '0 0 8px' },
+  sub: { color: '#8b90a0', fontSize: 14, margin: '0 0 20px' },
+  idBox: { background: '#22262f', border: '0.5px solid #2e3340', borderRadius: 8, padding: '8px 16px', color: '#4f6ef7', fontSize: 13, fontFamily: 'monospace', marginBottom: 24 },
+  leave: { background: 'none', border: '0.5px solid #2e3340', color: '#8b90a0', padding: '10px 28px', borderRadius: 8, fontSize: 13, cursor: 'pointer' },
+};
+
+// ── Main room content ─────────────────────────────────────────────────────────
+function RoomContent({ meetingId, isHost, onLeave }: Omit<MeetingRoomProps, 'token'>) {
   const { state, dispatch } = useMeeting();
   const { localParticipant } = useLocalParticipant();
   const participants = useParticipants();
   const room = useRoomContext();
-  const [sidebar, setSidebar] = useState<SidebarTab>('participants');
+  const [sidebar, setSidebar] = useState<SidebarTab>(null);
   const [elapsed, setElapsed] = useState(0);
   const [notification, setNotification] = useState<string | null>(null);
 
-  // Determine host/cohost status from metadata
-  const metadata = (() => { try { return JSON.parse(localParticipant.metadata ?? '{}'); } catch { return {}; } })();
-  const isHost = metadata.isHost === true;
-  const isCohost = state.cohosts.includes(localParticipant.identity ?? '');
-  const hasHostRights = isHost || isCohost;
+  // For non-hosts: start in waiting room; hosts go straight in
+  const [isWaiting, setIsWaiting] = useState(!isHost);
 
-  const tracks = useTracks(
-    [{ source: Track.Source.Camera, withPlaceholder: true }],
-    { onlySubscribed: false }
-  );
+  // Stable refs so data handler never has stale closures
+  const localParticipantRef = useRef(localParticipant);
+  useEffect(() => { localParticipantRef.current = localParticipant; }, [localParticipant]);
+  const onLeaveRef = useRef(onLeave);
+  useEffect(() => { onLeaveRef.current = onLeave; }, [onLeave]);
+  const roomRef = useRef(room);
+  useEffect(() => { roomRef.current = room; }, [room]);
 
+  // Host auto-admits themselves
+  useEffect(() => {
+    if (isHost && localParticipant.identity) {
+      dispatch({ type: 'ADMIT_PARTICIPANT', identity: localParticipant.identity });
+    }
+  }, [isHost, localParticipant.identity, dispatch]);
+
+  // Meeting timer
   useEffect(() => {
     const id = setInterval(() => setElapsed(s => s + 1), 1000);
     return () => clearInterval(id);
@@ -58,68 +92,96 @@ function RoomContent({ meetingId, isHost: _isHost, onLeave }: Omit<MeetingRoomPr
     return () => clearTimeout(t);
   }, [notification]);
 
-  // Handle incoming data channel messages
+  // Data channel — host actions + chat
   useEffect(() => {
     const decoder = new TextDecoder();
+    const hostActionTypes = new Set([
+      'MUTE','UNMUTE_REQUEST','STOP_VIDEO','START_VIDEO_REQUEST',
+      'MAKE_COHOST','REMOVE_COHOST','END_MEETING','ADMIT','DENY','REMOVE_PARTICIPANT',
+    ]);
+
     const handler = (payload: Uint8Array) => {
       try {
         const data = JSON.parse(decoder.decode(payload)) as Record<string, unknown>;
-        const hostActionTypes = ['MUTE','UNMUTE_REQUEST','STOP_VIDEO','START_VIDEO_REQUEST','MAKE_COHOST','REMOVE_COHOST','END_MEETING'];
+        const lp = localParticipantRef.current;
 
-        if (data.type && hostActionTypes.includes(data.type as string)) {
+        if (data.type && hostActionTypes.has(data.type as string)) {
           const action = data as unknown as HostAction;
           switch (action.type) {
             case 'END_MEETING':
-              room.disconnect();
-              onLeave();
+              roomRef.current.disconnect();
+              onLeaveRef.current();
+              break;
+            case 'ADMIT':
+              if (action.targetIdentity === lp.identity) {
+                setIsWaiting(false);
+                lp.setMicrophoneEnabled(true);
+                lp.setCameraEnabled(true);
+              }
+              // Host side: mark as admitted
+              if (action.targetIdentity) dispatch({ type: 'ADMIT_PARTICIPANT', identity: action.targetIdentity });
+              break;
+            case 'DENY':
+            case 'REMOVE_PARTICIPANT':
+              if (action.targetIdentity === lp.identity) {
+                roomRef.current.disconnect();
+                onLeaveRef.current();
+              }
               break;
             case 'MUTE':
-              if (action.targetIdentity === localParticipant.identity)
-                localParticipant.setMicrophoneEnabled(false);
+              if (action.targetIdentity === lp.identity)
+                lp.setMicrophoneEnabled(false);
               break;
             case 'STOP_VIDEO':
-              if (action.targetIdentity === localParticipant.identity)
-                localParticipant.setCameraEnabled(false);
+              if (action.targetIdentity === lp.identity)
+                lp.setCameraEnabled(false);
               break;
             case 'UNMUTE_REQUEST':
-              if (action.targetIdentity === localParticipant.identity)
+              if (action.targetIdentity === lp.identity)
                 setNotification('The host would like you to unmute your microphone.');
               break;
             case 'START_VIDEO_REQUEST':
-              if (action.targetIdentity === localParticipant.identity)
+              if (action.targetIdentity === lp.identity)
                 setNotification('The host would like you to start your camera.');
               break;
             case 'MAKE_COHOST':
-              dispatch({ type: 'ADD_COHOST', identity: action.targetIdentity ?? '' });
-              if (action.targetIdentity === localParticipant.identity)
-                setNotification('You have been made a co-host.');
+              if (action.targetIdentity) {
+                dispatch({ type: 'ADD_COHOST', identity: action.targetIdentity });
+                if (action.targetIdentity === lp.identity)
+                  setNotification('You have been made a co-host.');
+              }
               break;
             case 'REMOVE_COHOST':
-              dispatch({ type: 'REMOVE_COHOST', identity: action.targetIdentity ?? '' });
+              if (action.targetIdentity)
+                dispatch({ type: 'REMOVE_COHOST', identity: action.targetIdentity });
               break;
           }
         } else {
-          // Chat message
           const msg = data as unknown as ChatMessage;
           msg.timestamp = new Date(msg.timestamp);
           dispatch({ type: 'ADD_MESSAGE', message: msg });
         }
-      } catch { /* ignore malformed */ }
+      } catch { /* ignore */ }
     };
+
     room.on(RoomEvent.DataReceived, handler);
     return () => { room.off(RoomEvent.DataReceived, handler); };
-  }, [room, dispatch, localParticipant, onLeave]);
+  }, [room, dispatch]);
 
-  // Send a host action over data channel
+  // Broadcast host action to all (each peer checks their own identity)
   const sendHostAction = useCallback((action: HostAction) => {
     const encoder = new TextEncoder();
-    const opts = action.targetIdentity && action.type !== 'END_MEETING'
-      ? { reliable: true, destinationIdentities: [action.targetIdentity] }
-      : { reliable: true };
-    room.localParticipant.publishData(encoder.encode(JSON.stringify(action)), opts);
-    // Also apply locally if targeting self
-    if (action.type === 'MAKE_COHOST') dispatch({ type: 'ADD_COHOST', identity: action.targetIdentity ?? '' });
-    if (action.type === 'REMOVE_COHOST') dispatch({ type: 'REMOVE_COHOST', identity: action.targetIdentity ?? '' });
+    room.localParticipant.publishData(
+      encoder.encode(JSON.stringify(action)),
+      { reliable: true }
+    );
+    // Apply locally too
+    if (action.type === 'MAKE_COHOST' && action.targetIdentity)
+      dispatch({ type: 'ADD_COHOST', identity: action.targetIdentity });
+    if (action.type === 'REMOVE_COHOST' && action.targetIdentity)
+      dispatch({ type: 'REMOVE_COHOST', identity: action.targetIdentity });
+    if (action.type === 'ADMIT' && action.targetIdentity)
+      dispatch({ type: 'ADMIT_PARTICIPANT', identity: action.targetIdentity });
   }, [room, dispatch]);
 
   const handleEndMeeting = () => {
@@ -128,6 +190,24 @@ function RoomContent({ meetingId, isHost: _isHost, onLeave }: Omit<MeetingRoomPr
     room.disconnect();
     onLeave();
   };
+
+  const isCohost = state.cohosts.includes(localParticipant.identity ?? '');
+  const hasHostRights = isHost || isCohost;
+
+  // Show waiting room if participant hasn't been admitted yet
+  if (isWaiting) {
+    return (
+      <WaitingRoom
+        meetingId={meetingId}
+        onLeave={() => { room.disconnect(); onLeave(); }}
+      />
+    );
+  }
+
+  const tracks = useTracks(
+    [{ source: Track.Source.Camera, withPlaceholder: true }],
+    { onlySubscribed: false }
+  );
 
   const fmt = (s: number) => {
     const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
@@ -155,37 +235,32 @@ function RoomContent({ meetingId, isHost: _isHost, onLeave }: Omit<MeetingRoomPr
     : tracks.length <= 4 ? { gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr 1fr' }
     : { gridTemplateColumns: 'repeat(3, 1fr)' };
 
+  const totalParticipants = participants.filter(p => p.identity !== localParticipant.identity).length + 1;
+
   return (
     <div style={s.root}>
-      {/* Notification banner */}
       {notification && (
         <div style={s.notification}>
           <span>{notification}</span>
-          <button style={s.notifBtn} onClick={() => setNotification(null)}>✕</button>
+          <button style={s.notifClose} onClick={() => setNotification(null)}>✕</button>
         </div>
       )}
 
-      {/* Top bar */}
       <div style={s.topbar}>
         <div style={s.meetingInfo}>
           <span style={s.recDot} />
-          <span style={s.title}>Meeting</span>
           <span style={s.meetingId}>{meetingId}</span>
           <span style={s.timer}>{fmt(elapsed)}</span>
-          <span style={s.pcount}>👥 {participants.length + 1}</span>
+          <span style={s.pcount}>👥 {totalParticipants}</span>
           {isHost && <span style={s.hostTag}>Host</span>}
           {isCohost && !isHost && <span style={s.cohostTag}>Co-host</span>}
         </div>
         <div style={s.topActions}>
-          <TopBtn label="👥 Participants" active={sidebar === 'participants'} onClick={() => toggleSidebar('participants')} />
-          <TopBtn label="💬 Chat" active={sidebar === 'chat'} onClick={() => toggleSidebar('chat')} />
-          {isHost && (
-            <button style={s.endBtn} onClick={handleEndMeeting}>End Meeting</button>
-          )}
+          <TopBtn label="👥" active={sidebar === 'participants'} onClick={() => toggleSidebar('participants')} />
+          <TopBtn label="💬" active={sidebar === 'chat'} onClick={() => toggleSidebar('chat')} />
         </div>
       </div>
 
-      {/* Main */}
       <div style={s.main}>
         <div style={s.videoArea}>
           <div style={{ ...s.grid, ...gridStyle }}>
@@ -221,6 +296,7 @@ function RoomContent({ meetingId, isHost: _isHost, onLeave }: Omit<MeetingRoomPr
                   {tab === 'participants' ? 'People' : 'Chat'}
                 </button>
               ))}
+              <button style={s.closeTab} onClick={() => setSidebar(null)}>✕</button>
             </div>
             <div style={s.sidebarBody}>
               {sidebar === 'participants' && (
@@ -228,6 +304,7 @@ function RoomContent({ meetingId, isHost: _isHost, onLeave }: Omit<MeetingRoomPr
                   hasHostRights={hasHostRights}
                   isHost={isHost}
                   cohosts={state.cohosts}
+                  admittedParticipants={state.admittedParticipants}
                   localIdentity={localParticipant.identity ?? ''}
                   sendHostAction={sendHostAction}
                 />
@@ -243,24 +320,28 @@ function RoomContent({ meetingId, isHost: _isHost, onLeave }: Omit<MeetingRoomPr
         )}
       </div>
 
-      <ControlBar onLeave={onLeave} />
+      <ControlBar
+        onLeave={onLeave}
+        isHost={isHost}
+        onEndMeeting={handleEndMeeting}
+      />
     </div>
   );
 }
 
-export function MeetingRoom({ meetingId, localName: _localName, token, isHost, onLeave }: MeetingRoomProps) {
+export function MeetingRoom({ meetingId, localName, token, isHost, onLeave }: MeetingRoomProps) {
   return (
     <MeetingProvider>
       <LiveKitRoom
         serverUrl={import.meta.env.VITE_LIVEKIT_URL}
         token={token}
         connect={true}
-        audio={true}
-        video={true}
+        audio={isHost}
+        video={isHost}
         style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}
       >
         <RoomAudioRenderer />
-        <RoomContent meetingId={meetingId} localName={_localName} isHost={isHost} onLeave={onLeave} />
+        <RoomContent meetingId={meetingId} localName={localName} isHost={isHost} onLeave={onLeave} />
       </LiveKitRoom>
     </MeetingProvider>
   );
@@ -276,29 +357,28 @@ function TopBtn({ label, active, onClick }: { label: string; active?: boolean; o
 
 const s: Record<string, React.CSSProperties> = {
   root: { display: 'flex', flexDirection: 'column', height: '100vh', background: '#0d0f14', color: '#e8eaf0', fontFamily: "'Segoe UI', system-ui, sans-serif" },
-  notification: { background: '#2d3245', borderBottom: '0.5px solid #4f6ef7', padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 13, color: '#e8eaf0', flexShrink: 0 },
-  notifBtn: { background: 'none', border: 'none', color: '#8b90a0', cursor: 'pointer', fontSize: 14 },
-  topbar: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: '#181b22', borderBottom: '0.5px solid #2e3340', flexShrink: 0 },
-  meetingInfo: { display: 'flex', alignItems: 'center', gap: 10 },
-  recDot: { width: 8, height: 8, borderRadius: '50%', background: '#e54b4b', display: 'inline-block' },
-  title: { fontSize: 13, fontWeight: 500 },
-  meetingId: { fontSize: 11, color: '#8b90a0', background: '#22262f', padding: '2px 8px', borderRadius: 4, border: '0.5px solid #2e3340' },
-  timer: { fontSize: 12, color: '#8b90a0', fontVariantNumeric: 'tabular-nums' },
-  pcount: { fontSize: 12, color: '#8b90a0' },
-  hostTag: { fontSize: 10, background: 'rgba(79,110,247,.2)', color: '#4f6ef7', padding: '2px 8px', borderRadius: 4, fontWeight: 600 },
-  cohostTag: { fontSize: 10, background: 'rgba(34,197,94,.2)', color: '#22c55e', padding: '2px 8px', borderRadius: 4, fontWeight: 600 },
-  topActions: { display: 'flex', gap: 8, alignItems: 'center' },
-  topBtn: { background: '#22262f', border: '0.5px solid #2e3340', color: '#8b90a0', padding: '5px 12px', borderRadius: 6, fontSize: 12, cursor: 'pointer' },
+  notification: { background: '#1e2235', borderBottom: '1px solid #4f6ef7', padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 13, color: '#e8eaf0', flexShrink: 0 },
+  notifClose: { background: 'none', border: 'none', color: '#8b90a0', cursor: 'pointer', fontSize: 16 },
+  topbar: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: '#181b22', borderBottom: '0.5px solid #2e3340', flexShrink: 0, gap: 8 },
+  meetingInfo: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' as const, minWidth: 0 },
+  recDot: { width: 8, height: 8, borderRadius: '50%', background: '#e54b4b', display: 'inline-block', flexShrink: 0 },
+  meetingId: { fontSize: 11, color: '#8b90a0', background: '#22262f', padding: '2px 7px', borderRadius: 4, border: '0.5px solid #2e3340', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const, maxWidth: 120 },
+  timer: { fontSize: 12, color: '#8b90a0', fontVariantNumeric: 'tabular-nums', flexShrink: 0 },
+  pcount: { fontSize: 12, color: '#8b90a0', flexShrink: 0 },
+  hostTag: { fontSize: 10, background: 'rgba(79,110,247,.2)', color: '#4f6ef7', padding: '2px 8px', borderRadius: 4, fontWeight: 600, flexShrink: 0 },
+  cohostTag: { fontSize: 10, background: 'rgba(34,197,94,.2)', color: '#22c55e', padding: '2px 8px', borderRadius: 4, fontWeight: 600, flexShrink: 0 },
+  topActions: { display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 },
+  topBtn: { background: '#22262f', border: '0.5px solid #2e3340', color: '#8b90a0', padding: '6px 12px', borderRadius: 6, fontSize: 16, cursor: 'pointer', lineHeight: 1 },
   topBtnActive: { background: 'rgba(79,110,247,.15)', borderColor: '#4f6ef7', color: '#4f6ef7' },
-  endBtn: { background: '#e54b4b', border: 'none', color: '#fff', padding: '6px 14px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer' },
   main: { display: 'flex', flex: 1, overflow: 'hidden' },
-  videoArea: { flex: 1, display: 'flex', flexDirection: 'column', padding: 12, gap: 10, overflow: 'hidden' },
-  grid: { flex: 1, display: 'grid', gap: 8, overflow: 'hidden' },
-  strip: { display: 'flex', gap: 8, height: 120, flexShrink: 0 },
-  stripTile: { width: 160, flexShrink: 0 },
+  videoArea: { flex: 1, display: 'flex', flexDirection: 'column', padding: 8, gap: 8, overflow: 'hidden' },
+  grid: { flex: 1, display: 'grid', gap: 6, overflow: 'hidden' },
+  strip: { display: 'flex', gap: 6, height: 110, flexShrink: 0 },
+  stripTile: { width: 150, flexShrink: 0 },
   sidebar: { width: 260, background: '#181b22', borderLeft: '0.5px solid #2e3340', display: 'flex', flexDirection: 'column', flexShrink: 0 },
-  sidebarTabs: { display: 'flex', borderBottom: '0.5px solid #2e3340' },
+  sidebarTabs: { display: 'flex', borderBottom: '0.5px solid #2e3340', alignItems: 'center' },
   tab: { flex: 1, padding: '10px 0', fontSize: 12, fontWeight: 500, color: '#8b90a0', textAlign: 'center', cursor: 'pointer', background: 'none', border: 'none', borderBottom: '2px solid transparent' },
   tabActive: { color: '#4f6ef7', borderBottom: '2px solid #4f6ef7' },
-  sidebarBody: { flex: 1, overflowY: 'auto', padding: 10, display: 'flex', flexDirection: 'column' },
+  closeTab: { background: 'none', border: 'none', color: '#8b90a0', cursor: 'pointer', padding: '0 10px', fontSize: 14 },
+  sidebarBody: { flex: 1, overflowY: 'auto', padding: 8, display: 'flex', flexDirection: 'column' },
 };

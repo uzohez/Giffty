@@ -7,13 +7,15 @@ type Action =
   | { type: 'PIN_PARTICIPANT'; id: string | null }
   | { type: 'ADD_MESSAGE'; message: ChatMessage }
   | { type: 'ADD_COHOST'; identity: string }
-  | { type: 'REMOVE_COHOST'; identity: string };
+  | { type: 'REMOVE_COHOST'; identity: string }
+  | { type: 'ADMIT_PARTICIPANT'; identity: string };
 
 const initialState: UIState = {
   layout: 'grid',
   pinnedParticipantId: null,
   messages: [],
   cohosts: [],
+  admittedParticipants: [],
 };
 
 function reducer(state: UIState, action: Action): UIState {
@@ -30,6 +32,10 @@ function reducer(state: UIState, action: Action): UIState {
         : { ...state, cohosts: [...state.cohosts, action.identity] };
     case 'REMOVE_COHOST':
       return { ...state, cohosts: state.cohosts.filter(id => id !== action.identity) };
+    case 'ADMIT_PARTICIPANT':
+      return state.admittedParticipants.includes(action.identity)
+        ? state
+        : { ...state, admittedParticipants: [...state.admittedParticipants, action.identity] };
     default:
       return state;
   }
