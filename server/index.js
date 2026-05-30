@@ -3,7 +3,12 @@ import cors from 'cors';
 import { AccessToken } from 'livekit-server-sdk';
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}));
+app.options('*', cors());
 
 const LK_API_KEY = process.env.LK_API_KEY ?? process.env.LIVEKIT_API_KEY;
 const LK_API_SECRET = process.env.LK_API_SECRET ?? process.env.LIVEKIT_API_SECRET;
