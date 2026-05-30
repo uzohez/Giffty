@@ -1,0 +1,15 @@
+{
+  "name": "giffty-server",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node --env-file=.env index.js",
+    "dev": "node --env-file=.env --watch index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.0",
+    "livekit-server-sdk": "^2.15.4",
+    "socket.io": "^4.7.5"
+  }
+}

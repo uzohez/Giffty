@@ -1,0 +1,141 @@
+.tile {
+  position: relative;
+  background: #181b22;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1.5px solid #2e3340;
+  transition: border-color 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 160px;
+  cursor: pointer;
+}
+
+.tile::after {
+  content: '⛶';
+  position: absolute;
+  bottom: 8px;
+  right: 36px;
+  font-size: 13px;
+  color: rgba(255,255,255,0.5);
+  opacity: 0;
+  transition: opacity 0.15s;
+  pointer-events: none;
+}
+
+.tile:hover::after { opacity: 1; }
+
+.tile:hover .pinBtn { opacity: 1; }
+.tile:hover { border-color: rgba(79,110,247,0.4); }
+
+.speaking { border-color: #22c55e !important; }
+.pinned   { border-color: #4f6ef7 !important; }
+
+.video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  background: #1a1f2e;
+}
+
+.avatarCircle {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  font-weight: 600;
+  color: #fff;
+  letter-spacing: -0.5px;
+}
+
+.info {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.name {
+  font-size: 12px;
+  font-weight: 500;
+  color: #fff;
+  background: rgba(0,0,0,0.55);
+  padding: 3px 8px;
+  border-radius: 4px;
+  backdrop-filter: blur(4px);
+}
+
+.mutedIcon {
+  font-size: 14px;
+}
+
+.speakingBars {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  height: 14px;
+}
+
+.speakingBars span {
+  width: 3px;
+  background: #22c55e;
+  border-radius: 2px;
+  animation: bar 0.5s ease-in-out infinite alternate;
+}
+
+.speakingBars span:nth-child(1) { height: 5px; animation-delay: 0s; }
+.speakingBars span:nth-child(2) { height: 9px; animation-delay: 0.1s; }
+.speakingBars span:nth-child(3) { height: 13px; animation-delay: 0.2s; }
+.speakingBars span:nth-child(4) { height: 7px; animation-delay: 0.3s; }
+
+@keyframes bar {
+  from { transform: scaleY(0.5); }
+  to   { transform: scaleY(1.2); }
+}
+
+.pinBtn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  background: rgba(0,0,0,0.5);
+  border: none;
+  color: #fff;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.youBadge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  font-size: 10px;
+  background: rgba(79,110,247,0.3);
+  color: #4f6ef7;
+  padding: 2px 7px;
+  border-radius: 4px;
+  border: 0.5px solid rgba(79,110,247,0.4);
+  font-weight: 500;
+}
