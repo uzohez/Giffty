@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
 interface HomeProps {
-  onJoin: (meetingId: string, name: string) => void;
+  onJoin: (meetingId: string, name: string, isNew: boolean) => void;
   loading?: boolean;
   error?: string;
 }
@@ -19,7 +19,7 @@ export function Home({ onJoin, loading, error }: HomeProps) {
     if (!name.trim()) { setValidationError('Please enter your name'); return; }
     if (tab === 'join' && !meetingId.trim()) { setValidationError('Please enter a meeting ID'); return; }
     setValidationError('');
-    onJoin(tab === 'new' ? generateId() : meetingId.trim(), name.trim());
+    onJoin(tab === 'new' ? generateId() : meetingId.trim(), name.trim(), tab === 'new');
   };
 
   const displayError = validationError || error;

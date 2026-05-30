@@ -1,1 +1,1 @@
-export type { ChatMessage, UIState } from './types/index';
+export type { ChatMessage, UIState, HostAction, HostActionType } from './types/index';

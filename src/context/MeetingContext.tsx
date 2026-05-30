@@ -5,12 +5,15 @@ import type { ChatMessage, UIState } from '../types';
 type Action =
   | { type: 'SET_LAYOUT'; layout: 'grid' | 'spotlight' }
   | { type: 'PIN_PARTICIPANT'; id: string | null }
-  | { type: 'ADD_MESSAGE'; message: ChatMessage };
+  | { type: 'ADD_MESSAGE'; message: ChatMessage }
+  | { type: 'ADD_COHOST'; identity: string }
+  | { type: 'REMOVE_COHOST'; identity: string };
 
 const initialState: UIState = {
   layout: 'grid',
   pinnedParticipantId: null,
   messages: [],
+  cohosts: [],
 };
 
 function reducer(state: UIState, action: Action): UIState {
@@ -21,6 +24,12 @@ function reducer(state: UIState, action: Action): UIState {
       return { ...state, pinnedParticipantId: action.id };
     case 'ADD_MESSAGE':
       return { ...state, messages: [...state.messages, action.message] };
+    case 'ADD_COHOST':
+      return state.cohosts.includes(action.identity)
+        ? state
+        : { ...state, cohosts: [...state.cohosts, action.identity] };
+    case 'REMOVE_COHOST':
+      return { ...state, cohosts: state.cohosts.filter(id => id !== action.identity) };
     default:
       return state;
   }

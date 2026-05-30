@@ -17,7 +17,7 @@ const PORT = process.env.PORT ?? 3001;
 app.get('/health', (_, res) => res.json({ ok: true }));
 
 app.get('/token', async (req, res) => {
-  const { room, username } = req.query;
+  const { room, username, isHost } = req.query;
   if (!room || !username)
     return res.status(400).json({ error: 'room and username are required' });
   if (!LK_API_KEY || !LK_API_SECRET)
@@ -26,6 +26,7 @@ app.get('/token', async (req, res) => {
   const at = new AccessToken(LK_API_KEY, LK_API_SECRET, {
     identity: `${username}-${Date.now()}`,
     name: String(username),
+    metadata: JSON.stringify({ isHost: isHost === 'true' }),
     ttl: '4h',
   });
   at.addGrant({
