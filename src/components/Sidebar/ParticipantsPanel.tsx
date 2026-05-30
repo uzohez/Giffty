@@ -6,13 +6,15 @@ export function ParticipantsPanel() {
 
   const all = [
     { identity: localParticipant.identity, name: localParticipant.name ?? localParticipant.identity, isMuted: !isMicrophoneEnabled, isVideoOff: !isCameraEnabled, isHost: true },
-    ...participants.map(p => ({
-      identity: p.identity,
-      name: p.name ?? p.identity,
-      isMuted: !p.isMicrophoneEnabled,
-      isVideoOff: !p.isCameraEnabled,
-      isHost: false,
-    })),
+    ...participants
+      .filter(p => p.identity !== localParticipant.identity)
+      .map(p => ({
+        identity: p.identity,
+        name: p.name ?? p.identity,
+        isMuted: !p.isMicrophoneEnabled,
+        isVideoOff: !p.isCameraEnabled,
+        isHost: false,
+      })),
   ];
 
   return (

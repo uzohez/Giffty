@@ -5,6 +5,7 @@ import {
   useLocalParticipant,
   useTracks,
   useRoomContext,
+  RoomAudioRenderer,
 } from '@livekit/components-react';
 import { Track, RoomEvent } from 'livekit-client';
 import type { TrackReferenceOrPlaceholder } from '@livekit/components-react';
@@ -176,6 +177,7 @@ export function MeetingRoom({ meetingId, localName, token, onLeave }: MeetingRoo
         video={true}
         style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}
       >
+        <RoomAudioRenderer />
         <RoomContent meetingId={meetingId} localName={localName} onLeave={onLeave} />
       </LiveKitRoom>
     </MeetingProvider>
